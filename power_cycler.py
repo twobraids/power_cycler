@@ -43,7 +43,7 @@ required_config.add_option(
 )
 required_config.add_option(
     'seconds_for_timeout',
-    doc='the number of seconds to allow before assuming the service is down',
+    doc='the number of seconds to allow before assuming the router is down',
     default=10
 )
 required_config.add_option(
@@ -53,12 +53,12 @@ required_config.add_option(
 )
 required_config.add_option(
     'seconds_to_leave_service_off',
-    doc='the number of seconds to leave the service off after shutting it down',
+    doc='the number of seconds to leave the router off after shutting it down',
     default=60
 )
 required_config.add_option(
     'seconds_to_restore_service',
-    doc='the number of seconds required to power up the service',
+    doc='the number of seconds required to power up the router',
     default=90
 )
 required_config.add_option(
