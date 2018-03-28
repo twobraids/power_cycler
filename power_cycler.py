@@ -125,7 +125,7 @@ class RouterPowerCycler(Thing):
             logging.debug('target error')
             self.router_up = False
 
-    async def monitor_target(self):
+    async def monitor_router(self):
         while True:
             await self.hit_target_url()
             if self.router_up:
@@ -160,14 +160,14 @@ def run_server(config):
         # add tasks to that event loop, so we must reach into Tornado to get it
         io_loop = IOLoop.current().asyncio_loop
         logging.debug('create task')
-        io_loop.create_task(router_power_cycler.monitor_target())
+        io_loop.create_task(router_power_cycler.monitor_router())
         logging.debug('server.start')
         server.start()
 
     except KeyboardInterrupt:
         logging.debug('stop signal received')
         # when stopping the server, we need to halt any tasks pending from the
-        # method 'monitor_target'. Gather them together and cancel them en masse.
+        # method 'monitor_router'. Gather them together and cancel them en masse.
         pending_tasks_in_a_group = gather(*Task.all_tasks(), return_exceptions=True)
         pending_tasks_in_a_group.cancel()
         # let the io_loop run until the all the tasks complete their cancelation
