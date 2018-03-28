@@ -24,11 +24,19 @@ from configman import (
     configuration,
     Namespace
 )
+from functools import (
+    partial
+)
 
 required_config = Namespace()
 required_config.add_option(
+    'service_port',
+    doc='a port number for the Web Things Service',
+    default=8888
+)
+required_config.add_option(
     'target_url',
-    doc='the url to test',
+    doc='a url outside the local network to determine if the router is up',
     default='http://uncommonrose.com'
 )
 required_config.add_option(
@@ -51,36 +59,43 @@ required_config.add_option(
     doc='the number of seconds required to power up the service',
     default=90
 )
+required_config.add_option(
+    'logging_level',
+    doc='log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)',
+    default='ERROR',
+    from_string_converter=lambda s: getattr(logging, s.toupper(), None)
+)
 
 
-class TargetDownEvent(Event):
+
+class RouterDownEvent(Event):
     def __init__(self, thing, data):
-        super(TargetDownEvent, self).__init__(thing, 'target_down', data=data)
+        super(RouterDownEvent, self).__init__(thing, 'router_down', data=data)
 
 
-class RestartTargetEvent(Event):
+class RestartRouterEvent(Event):
     def __init__(self, thing, data):
-        super(RestartTargetEvent, self).__init__(thing, 'restart_target', data=data)
+        super(RestartRouterEvent, self).__init__(thing, 'restart_router', data=data)
 
 
-class PingThing(Thing):
+class RouterPowerCycler(Thing):
     def __init__(self, config):
         self.config = config
-        super(PingThing, self).__init__(
-            name='ping_thing',
+        super(RouterPowerCycler, self).__init__(
+            name='router_power_cycler',
             description='a Linux service as a Web Thing'
         )
         self.add_available_event(
-            "target_down",
+            "router_down",
             {
-                "description": "the target service is down",
+                "description": "the router is down",
                 "type": "boolean"
             }
         )
         self.add_available_event(
-            "restart_target",
+            "restart_router",
             {
-                "description": "the target should restart",
+                "description": "the router should restart",
                 "type": "boolean"
             }
         )
@@ -109,11 +124,11 @@ class PingThing(Thing):
                 await sleep(config.seconds_between_tests)
                 continue
             print('add TargetDown')
-            self.add_event(TargetDownEvent(self, True))
+            self.add_event(RouterDownEvent(self, True))
             print('leave service off for {} seconds'.format(config.seconds_to_leave_service_off))
             await sleep(config.seconds_to_leave_service_off)
             print('add RestartTarget')
-            self.add_event(RestartTargetEvent(self, True))
+            self.add_event(RestartRouterEvent(self, True))
             print('allow time for service to restart for {} seconds'.format(config.seconds_to_restore_service))
             await sleep(config.seconds_to_restore_service)
             self.target_up = True
@@ -122,16 +137,16 @@ class PingThing(Thing):
 def run_server(config):
     print('run server')
 
-    ping_monitor = PingThing(config)
+    router_power_cycler = RouterPowerCycler(config)
 
-    server = WebThingServer([ping_monitor], port=8888)
+    server = WebThingServer([router_power_cycler], port=config.service_port)
     try:
         print('server.start')
-        # the Tornado Web server has uses an asyncio event loop.  We want to
+        # the Tornado Web server uses an asyncio event loop.  We want to
         # add tasks to that event loop, so we must reach into Tornado to get it
         io_loop = IOLoop.current().asyncio_loop
         print('create task')
-        io_loop.create_task(ping_monitor.monitor_target())
+        io_loop.create_task(router_power_cycler.monitor_target())
 
         server.start()
 
