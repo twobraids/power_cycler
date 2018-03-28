@@ -27,6 +27,8 @@ from configman import (
 from functools import (
     partial
 )
+import logging
+from collections import Mapping
 
 required_config = Namespace()
 required_config.add_option(
@@ -62,8 +64,13 @@ required_config.add_option(
 required_config.add_option(
     'logging_level',
     doc='log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)',
-    default='ERROR',
-    from_string_converter=lambda s: getattr(logging, s.toupper(), None)
+    default='DEBUG',
+    from_string_converter=lambda s: getattr(logging, s.upper(), None)
+)
+required_config.add_option(
+    'logging_format',
+    doc='format string for logging',
+    default='%(asctime)s %(filename)s:%(lineno)s %(levelname)s %(message)s',
 )
 
 
@@ -102,56 +109,67 @@ class RouterPowerCycler(Thing):
 
         self.target_up = True
 
-    async def ping(self):
-        print('executing ping')
+    async def hit_target_url(self):
+        logging.debug('executing hit_target_url')
         try:
             async with ClientSession() as session:
                 async with timeout(config.seconds_for_timeout):
                     async with session.get(config.target_url) as response:
                         await response.text()
         except CancelledError as e:
-            print('ping shutdown')
+            logging.debug('hit_target_url shutdown')
             raise e
         except Exception:
-            print('target error')
+            logging.debug('target error')
             self.target_up = False
 
     async def monitor_target(self):
         while True:
-            await self.ping()
+            await self.hit_target_url()
             if self.target_up:
-                print('sleep between tests for {} seconds'.format(config.seconds_between_tests))
+                logging.debug('sleep between tests for %s seconds', config.seconds_between_tests)
                 await sleep(config.seconds_between_tests)
                 continue
-            print('add TargetDown')
+            logging.debug('add TargetDown')
             self.add_event(RouterDownEvent(self, True))
-            print('leave service off for {} seconds'.format(config.seconds_to_leave_service_off))
+            logging.debug('leave service off for %s seconds', config.seconds_to_leave_service_off)
             await sleep(config.seconds_to_leave_service_off)
-            print('add RestartTarget')
+            logging.debug('add RestartTarget')
             self.add_event(RestartRouterEvent(self, True))
-            print('allow time for service to restart for {} seconds'.format(config.seconds_to_restore_service))
+            logging.debug('allow time for service to restart for %s seconds', config.seconds_to_restore_service)
             await sleep(config.seconds_to_restore_service)
             self.target_up = True
 
+def log_config(config, prefix=''):
+    for key, value in config.items():
+        if isinstance(value, Mapping):
+            log_config(value, "{}.".format(key))
+        else:
+            logging.info('%s%s: %s', prefix, key, value)
 
 def run_server(config):
-    print('run server')
+    logging.basicConfig(
+        level=config.logging_level,
+        format=config.logging_format
+    )
+    log_config(config)
+    logging.debug('run server')
 
     router_power_cycler = RouterPowerCycler(config)
 
     server = WebThingServer([router_power_cycler], port=config.service_port)
     try:
-        print('server.start')
+        logging.debug('server.start')
         # the Tornado Web server uses an asyncio event loop.  We want to
         # add tasks to that event loop, so we must reach into Tornado to get it
         io_loop = IOLoop.current().asyncio_loop
-        print('create task')
+        logging.debug('create task')
         io_loop.create_task(router_power_cycler.monitor_target())
 
         server.start()
 
     except KeyboardInterrupt:
-        print('server.stop')
+        logging.debug('stop signal received')
         # when stopping the server, we need to halt any tasks pending from the
         # method 'monitor_target'. Gather them together and cancel them en masse.
         pending_tasks_in_a_group = gather(*Task.all_tasks(), return_exceptions=True)
@@ -164,7 +182,4 @@ def run_server(config):
 
 if __name__ == '__main__':
     config = configuration(required_config)
-    for key, value in config.items():
-        print('{}: {}'.format(key, value))
-    print('main')
     run_server(config)
