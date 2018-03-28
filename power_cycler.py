@@ -24,11 +24,11 @@ from configman import (
     configuration,
     Namespace
 )
-from functools import (
-    partial
+from collections import (
+    Mapping
 )
 import logging
-from collections import Mapping
+
 
 required_config = Namespace()
 required_config.add_option(
@@ -72,7 +72,6 @@ required_config.add_option(
     doc='format string for logging',
     default='%(asctime)s %(filename)s:%(lineno)s %(levelname)s %(message)s',
 )
-
 
 
 class RouterDownEvent(Event):
@@ -138,9 +137,13 @@ class RouterPowerCycler(Thing):
             await sleep(config.seconds_to_leave_service_off)
             logging.debug('add RestartTarget')
             self.add_event(RestartRouterEvent(self, True))
-            logging.debug('allow time for service to restart for %s seconds', config.seconds_to_restore_service)
+            logging.debug(
+                'allow time for service to restart for %s seconds',
+                config.seconds_to_restore_service
+            )
             await sleep(config.seconds_to_restore_service)
             self.router_up = True
+
 
 def log_config(config, prefix=''):
     for key, value in config.items():
@@ -148,6 +151,7 @@ def log_config(config, prefix=''):
             log_config(value, "{}.".format(key))
         else:
             logging.info('%s%s: %s', prefix, key, value)
+
 
 def run_server(config):
     logging.debug('run server')
