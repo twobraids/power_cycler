@@ -107,7 +107,7 @@ class RouterPowerCycler(Thing):
             }
         )
 
-        self.target_up = True
+        self.router_up = True
 
     async def hit_target_url(self):
         logging.debug('executing hit_target_url')
@@ -115,18 +115,20 @@ class RouterPowerCycler(Thing):
             async with ClientSession() as session:
                 async with timeout(config.seconds_for_timeout):
                     async with session.get(config.target_url) as response:
+                        # we're just awaitng a response before a timeout
+                        # we don't really care what the response is
                         await response.text()
         except CancelledError as e:
             logging.debug('hit_target_url shutdown')
             raise e
         except Exception:
             logging.debug('target error')
-            self.target_up = False
+            self.router_up = False
 
     async def monitor_target(self):
         while True:
             await self.hit_target_url()
-            if self.target_up:
+            if self.router_up:
                 logging.debug('sleep between tests for %s seconds', config.seconds_between_tests)
                 await sleep(config.seconds_between_tests)
                 continue
@@ -138,7 +140,7 @@ class RouterPowerCycler(Thing):
             self.add_event(RestartRouterEvent(self, True))
             logging.debug('allow time for service to restart for %s seconds', config.seconds_to_restore_service)
             await sleep(config.seconds_to_restore_service)
-            self.target_up = True
+            self.router_up = True
 
 def log_config(config, prefix=''):
     for key, value in config.items():
@@ -148,24 +150,18 @@ def log_config(config, prefix=''):
             logging.info('%s%s: %s', prefix, key, value)
 
 def run_server(config):
-    logging.basicConfig(
-        level=config.logging_level,
-        format=config.logging_format
-    )
-    log_config(config)
     logging.debug('run server')
 
     router_power_cycler = RouterPowerCycler(config)
 
     server = WebThingServer([router_power_cycler], port=config.service_port)
     try:
-        logging.debug('server.start')
         # the Tornado Web server uses an asyncio event loop.  We want to
         # add tasks to that event loop, so we must reach into Tornado to get it
         io_loop = IOLoop.current().asyncio_loop
         logging.debug('create task')
         io_loop.create_task(router_power_cycler.monitor_target())
-
+        logging.debug('server.start')
         server.start()
 
     except KeyboardInterrupt:
@@ -182,4 +178,9 @@ def run_server(config):
 
 if __name__ == '__main__':
     config = configuration(required_config)
+    logging.basicConfig(
+        level=config.logging_level,
+        format=config.logging_format
+    )
+    log_config(config)
     run_server(config)
