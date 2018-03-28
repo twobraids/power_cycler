@@ -21,6 +21,13 @@ from asyncio import (
     Task,
     gather
 )
+from aiohttp import (
+    ClientSession
+)
+from async_timeout import (
+    timeout
+)
+
 
 async def my_async_task(a='a', t=5.0):
     try:

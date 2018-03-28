@@ -7,26 +7,65 @@ from webthing import (
 )
 from asyncio import (
     Task,
+    CancelledError,
     sleep,
     gather
 )
-from tornado import (
+from tornado.ioloop import (
     IOLoop
+)
+from aiohttp import (
+    ClientSession
+)
+from async_timeout import (
+    timeout
+)
+from configman import (
+    configuration,
+    Namespace
+)
+
+required_config = Namespace()
+required_config.add_option(
+    'target_url',
+    doc='the url to test',
+    default='http://uncommonrose.com'
+)
+required_config.add_option(
+    'seconds_for_timeout',
+    doc='the number of seconds to allow before assuming the service is down',
+    default=10
+)
+required_config.add_option(
+    'seconds_between_tests',
+    doc='the number of seconds between each test trial',
+    default=120
+)
+required_config.add_option(
+    'seconds_to_leave_service_off',
+    doc='the number of seconds to leave the service off after shutting it down',
+    default=60
+)
+required_config.add_option(
+    'seconds_to_restore_service',
+    doc='the number of seconds required to power up the service',
+    default=90
 )
 
 
-class TargetDown(Event):
+class TargetDownEvent(Event):
     def __init__(self, thing, data):
-        super(TargetDown, self).__init__(thing, 'target_down', data=data)
+        super(TargetDownEvent, self).__init__(thing, 'target_down', data=data)
 
 
-class RestartTarget(Event):
+class RestartTargetEvent(Event):
     def __init__(self, thing, data):
-        super(RestartTarget, self).__init__(thing, 'restart_target', data=data)
+        super(RestartTargetEvent, self).__init__(thing, 'restart_target', data=data)
 
 
 class PingThing(Thing):
-    def __init__(self, ping_target_address):
+    def __init__(self, config):
+        self.config = config
         super(PingThing, self).__init__(
             name='ping_thing',
             description='a Linux service as a Web Thing'
@@ -46,28 +85,44 @@ class PingThing(Thing):
             }
         )
 
-        self.ping_target_address = ping_target_address
         self.target_up = True
 
     async def ping(self):
-        pass  # TODO write ping code
+        print('executing ping')
+        try:
+            async with ClientSession() as session:
+                async with timeout(config.seconds_for_timeout):
+                    async with session.get(config.target_url) as response:
+                        await response.text()
+        except CancelledError as e:
+            print('ping shutdown')
+            raise e
+        except Exception:
+            print('target error')
+            self.target_up = False
 
     async def monitor_target(self):
         while True:
             await self.ping()
             if self.target_up:
-                await sleep(60.0)
+                print('sleep between tests for {} seconds'.format(config.seconds_between_tests))
+                await sleep(config.seconds_between_tests)
                 continue
-            self.add_event(TargetDown(self, True))
-            await sleep(30.0)
-            self.add_event(RestartTarget(self, True))
-            await sleep(60.0)
+            print('add TargetDown')
+            self.add_event(TargetDownEvent(self, True))
+            print('leave service off for {} seconds'.format(config.seconds_to_leave_service_off))
+            await sleep(config.seconds_to_leave_service_off)
+            print('add RestartTarget')
+            self.add_event(RestartTargetEvent(self, True))
+            print('allow time for service to restart for {} seconds'.format(config.seconds_to_restore_service))
+            await sleep(config.seconds_to_restore_service)
+            self.target_up = True
 
 
-def run_server():
+def run_server(config):
     print('run server')
 
-    ping_monitor = PingThing('192.168.168.1')
+    ping_monitor = PingThing(config)
 
     server = WebThingServer([ping_monitor], port=8888)
     try:
@@ -93,5 +148,8 @@ def run_server():
 
 
 if __name__ == '__main__':
+    config = configuration(required_config)
+    for key, value in config.items():
+        print('{}: {}'.format(key, value))
     print('main')
-    run_server()
+    run_server(config)
