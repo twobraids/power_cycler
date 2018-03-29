@@ -52,12 +52,12 @@ required_config.add_option(
     default=120
 )
 required_config.add_option(
-    'seconds_to_leave_service_off',
+    'seconds_to_leave_router_off',
     doc='the number of seconds to leave the router off after shutting it down',
     default=60
 )
 required_config.add_option(
-    'seconds_to_restore_service',
+    'seconds_to_restore_router',
     doc='the number of seconds required to power up the router',
     default=90
 )
@@ -133,15 +133,15 @@ class RouterPowerCycler(Thing):
                 continue
             logging.debug('add TargetDown')
             self.add_event(RouterDownEvent(self, True))
-            logging.debug('leave service off for %s seconds', config.seconds_to_leave_service_off)
-            await sleep(config.seconds_to_leave_service_off)
+            logging.debug('leave service off for %s seconds', config.seconds_to_leave_router_off)
+            await sleep(config.seconds_to_leave_router_off)
             logging.debug('add RestartTarget')
             self.add_event(RestartRouterEvent(self, True))
             logging.debug(
                 'allow time for service to restart for %s seconds',
-                config.seconds_to_restore_service
+                config.seconds_to_restore_router
             )
-            await sleep(config.seconds_to_restore_service)
+            await sleep(config.seconds_to_restore_router)
             self.router_up = True
 
 
